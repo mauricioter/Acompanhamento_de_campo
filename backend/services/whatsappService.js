@@ -1,7 +1,20 @@
 const { spawn } = require("child_process");
+const { isServerlessRuntime } = require("../environment");
+
+const IS_SERVERLESS_RUNTIME = isServerlessRuntime();
 
 function sanitizePhone(phone) {
     return String(phone || "").replace(/\D/g, "");
+}
+
+function shouldReturnUrlOnly() {
+    return process.env.WHATSAPP_OPEN_MODE === "manual" || IS_SERVERLESS_RUNTIME;
+}
+
+function shouldSkipExternalOpen() {
+    return process.env.WHATSAPP_OPEN_MODE === "mock"
+        || process.env.NODE_ENV === "test"
+        || shouldReturnUrlOnly();
 }
 
 function buildWhatsAppUrl(phone, text) {
@@ -12,7 +25,7 @@ function buildWhatsAppUrl(phone, text) {
 
 function openExternalUrl(url) {
     return new Promise((resolve, reject) => {
-        if (process.env.WHATSAPP_OPEN_MODE === "mock" || process.env.NODE_ENV === "test") {
+        if (shouldSkipExternalOpen()) {
             resolve();
             return;
         }
@@ -57,6 +70,14 @@ async function openWhatsAppMessage(phone, text) {
     }
 
     const url = buildWhatsAppUrl(normalizedPhone, message);
+
+    if (shouldReturnUrlOnly()) {
+        return {
+            statusCode: 200,
+            message: "Link do WhatsApp gerado para abertura manual.",
+            url,
+        };
+    }
 
     try {
         await openExternalUrl(url);

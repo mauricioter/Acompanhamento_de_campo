@@ -963,6 +963,20 @@ export function DashboardApp({ currentUser, onLogout, theme, onToggleTheme, onAu
                 setWhatsappAutomation(buildEmptyAutomationState(data.automation));
                 setAutomationDirty(false);
             }
+
+            if (data.url) {
+                const whatsappWindow = window.open(data.url, "_blank", "noopener,noreferrer");
+
+                if (!whatsappWindow) {
+                    try {
+                        await navigator.clipboard.writeText(data.url);
+                        showFeedback("Link do WhatsApp gerado e copiado para abertura manual.");
+                        return;
+                    } catch (_clipboardError) {
+                    }
+                }
+            }
+
             showFeedback(data.message || "WhatsApp aberto com o relatorio pronto para envio.");
         } catch (error) {
             handleAppError(error);

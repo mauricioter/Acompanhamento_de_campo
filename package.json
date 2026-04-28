@@ -4,6 +4,9 @@
   "private": true,
   "description": "Sistema web para controle de atendimentos tecnicos com Node.js, React e SQLite.",
   "main": "backend/server.js",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "start": "node backend/server.js",
     "dev": "node --watch backend/server.js",
@@ -14,6 +17,7 @@
     "htm": "^3.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sql.js": "^1.13.0"
+    "sql.js": "^1.13.0",
+    "vercel": "^52.0.0"
   }
 }

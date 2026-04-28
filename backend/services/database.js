@@ -1,27 +1,54 @@
 const fs = require("fs");
 const path = require("path");
 const { DatabaseSync, backup } = require("node:sqlite");
+const { getWritableDataRoot, isServerlessRuntime } = require("../environment");
 
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
+const IS_SERVERLESS_RUNTIME = isServerlessRuntime();
+const DATA_ROOT_DIR = getWritableDataRoot(ROOT_DIR);
+const BUNDLED_DATABASE_PATH = path.join(ROOT_DIR, "atendimentos.db");
+const DEFAULT_DATABASE_PATH = path.join(DATA_ROOT_DIR, "atendimentos.db");
+const DEFAULT_BACKUP_DIR = path.join(DATA_ROOT_DIR, "backups");
 const DATABASE_PATH = process.env.DATABASE_PATH
     ? path.resolve(process.env.DATABASE_PATH)
-    : path.join(ROOT_DIR, "atendimentos.db");
+    : DEFAULT_DATABASE_PATH;
 const BACKUP_DIR = process.env.DATABASE_BACKUP_DIR
     ? path.resolve(process.env.DATABASE_BACKUP_DIR)
-    : path.join(ROOT_DIR, "backups");
+    : DEFAULT_BACKUP_DIR;
 const MAX_BACKUPS = Number(process.env.DATABASE_MAX_BACKUPS || 10);
+const SHOULD_CREATE_STARTUP_BACKUP = process.env.DATABASE_STARTUP_BACKUP === "true"
+    ? true
+    : process.env.DATABASE_STARTUP_BACKUP === "false"
+        ? false
+        : !IS_SERVERLESS_RUNTIME;
 const REPAIRABLE_INDEX_INTEGRITY_ISSUE_PATTERNS = [
     /\bmissing from index\b/i,
     /\bwrong # of entries in index\b/i,
 ];
 
 let db;
+let serverlessStorageWarningShown = false;
 
 function ensureDatabase() {
     if (!db) {
         throw new Error("Banco de dados ainda nao foi inicializado.");
     }
     return db;
+}
+
+function logServerlessStorageWarning() {
+    if (
+        serverlessStorageWarningShown
+        || !IS_SERVERLESS_RUNTIME
+        || process.env.DATABASE_PATH
+    ) {
+        return;
+    }
+
+    serverlessStorageWarningShown = true;
+    console.warn(
+        "Runtime serverless detectado. O SQLite sera executado em armazenamento temporario (/tmp), sem persistencia garantida entre novas instancias ou deploys."
+    );
 }
 
 function normalizeParams(params = []) {
@@ -431,6 +458,33 @@ function pruneBackups() {
     }
 }
 
+function copyOptionalDatabaseSibling(sourcePath, targetPath) {
+    if (!fs.existsSync(sourcePath)) {
+        return;
+    }
+
+    fs.copyFileSync(sourcePath, targetPath);
+}
+
+function hydrateWritableDatabaseFromBundle() {
+    if (!IS_SERVERLESS_RUNTIME || process.env.DATABASE_PATH) {
+        return;
+    }
+
+    if (path.resolve(DATABASE_PATH) === path.resolve(BUNDLED_DATABASE_PATH)) {
+        return;
+    }
+
+    if (fs.existsSync(DATABASE_PATH) || !fs.existsSync(BUNDLED_DATABASE_PATH)) {
+        return;
+    }
+
+    fs.mkdirSync(path.dirname(DATABASE_PATH), { recursive: true });
+    fs.copyFileSync(BUNDLED_DATABASE_PATH, DATABASE_PATH);
+    copyOptionalDatabaseSibling(`${BUNDLED_DATABASE_PATH}-wal`, `${DATABASE_PATH}-wal`);
+    copyOptionalDatabaseSibling(`${BUNDLED_DATABASE_PATH}-shm`, `${DATABASE_PATH}-shm`);
+}
+
 async function createStartupBackup() {
     if (!fs.existsSync(DATABASE_PATH)) {
         return;
@@ -468,11 +522,15 @@ async function initializeDatabase() {
         return db;
     }
 
+    logServerlessStorageWarning();
+    hydrateWritableDatabaseFromBundle();
     fs.mkdirSync(path.dirname(DATABASE_PATH), { recursive: true });
     db = new DatabaseSync(DATABASE_PATH);
     configureDatabase();
     initDb();
-    await createStartupBackup();
+    if (SHOULD_CREATE_STARTUP_BACKUP) {
+        await createStartupBackup();
+    }
     return db;
 }
 

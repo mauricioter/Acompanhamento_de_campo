@@ -1,5 +1,9 @@
 const tests = [
     {
+        name: "serverless runtime compatibility",
+        run: require("./serverless-runtime.test.js"),
+    },
+    {
         name: "database integrity helpers",
         run: require("./database-integrity.test.js"),
     },
